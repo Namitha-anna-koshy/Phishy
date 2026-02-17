@@ -1,22 +1,38 @@
-import joblib
-import pandas as pd
+"""
+ML Service module for URL feature extraction and phishing prediction.
+This module integrates a LightGBM model to provide local intelligence.
+"""
+
 import re
 from urllib.parse import urlparse
+import joblib
+import pandas as pd
 
-# Load the model (ensure the file is in backend/models/)
-MODEL_PATH = r'C:\Users\Namitha Anna Koshy\Documents\HONORS\PROJECT\Phishy\Phishy\model\url_phishing_lgbm_model.pkl'
+# Use a relative path to ensure the code is portable across different machines
+MODEL_PATH = "model/url_phishing_lgbm_model.pkl"
 
-try:
-    # Use joblib to load your trained LightGBM model
-    lgbm_model = joblib.load(MODEL_PATH)
-except Exception as e:
-    print(f"Critical Error: Could not load ML model: {e}")
-    lgbm_model = None
+def load_model():
+    """
+    Safely loads the LightGBM model from the specified path.
+    """
+    try:
+        return joblib.load(MODEL_PATH)
+    except (FileNotFoundError, IOError) as error:
+        print(f"Critical Error: Could not load ML model at {MODEL_PATH}: {error}")
+        return None
+
+# Global model instance for efficiency
+LGBM_MODEL = load_model()
 
 def extract_url_features(url: str) -> pd.DataFrame:
     """
-    Extracts features from a URL string to match the model's training schema.
-    Ensure these match exactly what you used in your Task 3 Notebook.
+    Extracts numerical features from a URL string for model inference.
+    
+    Args:
+        url (str): The raw URL string to analyze.
+        
+    Returns:
+        pd.DataFrame: A single-row DataFrame containing extracted features.
     """
     parsed = urlparse(url)
     hostname = parsed.netloc
@@ -28,23 +44,40 @@ def extract_url_features(url: str) -> pd.DataFrame:
         "num_hyphens": url.count('-'),
         "is_ip": 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", hostname) else 0,
         "is_https": 1 if url.startswith("https") else 0,
-        # Add additional features here to match your specific model columns
     }
     return pd.DataFrame([features])
 
 def get_ml_prediction(url: str) -> dict:
     """
-    Runs inference using the LightGBM model.
+    Performs inference on a URL and returns a standardized verdict.
+    
+    Args:
+        url (str): The URL to analyze.
+        
+    Returns:
+        dict: A dictionary containing the verdict and confidence score.
     """
-    if lgbm_model is None:
-        return {"status": "error", "message": "Model not loaded"}
+    if LGBM_MODEL is None:
+        return {
+            "verdict": "ERROR",
+            "confidence_score": 0.0,
+            "message": "Model not loaded"
+        }
 
     features_df = extract_url_features(url)
     
-    # Get probability of being malicious (assuming class 1 is phishing)
-    prob = lgbm_model.predict_proba(features_df)[0][1]
+    # Get probability for the positive class (phishing)
+    # Standard LightGBM predict_proba returns [prob_class_0, prob_class_1]
+    try:
+        prob = LGBM_MODEL.predict_proba(features_df)[0][1]
+    except (AttributeError, ValueError, IndexError) as error:
+        return {
+            "verdict": "ERROR",
+            "confidence_score": 0.0,
+            "message": f"Inference failed: {str(error)}"
+        }
     
-    # Define thresholds for results
+    # Verdict thresholding logic
     if prob > 0.8:
         label = "MALICIOUS"
     elif prob > 0.4:
