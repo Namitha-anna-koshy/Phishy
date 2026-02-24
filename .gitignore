@@ -217,6 +217,7 @@ model/datasets/*.zip
 model/notebooks/*.pkl
 model/notebooks/*.model
 backend/models/*.pkl
+backend/*.pkl
 
 # --- Next.js Frontend ---
 node_modules/
