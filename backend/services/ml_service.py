@@ -7,9 +7,13 @@ import re
 from urllib.parse import urlparse
 import joblib
 import pandas as pd
+import os
 
-# Use a relative path to ensure the code is portable across different machines
-MODEL_PATH = "model/url_phishing_lgbm_model.pkl"
+# This gets the directory where ml_service.py is located
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Move up one level if the model is in the parent 'backend' folder
+MODEL_PATH = os.path.join(BASE_DIR, "..", "model.pkl")
 
 def load_model():
     """
@@ -42,7 +46,7 @@ def extract_url_features(url: str) -> pd.DataFrame:
         "hostname_length": len(hostname),
         "num_dots": url.count('.'),
         "num_hyphens": url.count('-'),
-        "is_ip": 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", hostname) else 0,
+        #"is_ip": 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", hostname) else 0,
         "is_https": 1 if url.startswith("https") else 0,
     }
     return pd.DataFrame([features])
