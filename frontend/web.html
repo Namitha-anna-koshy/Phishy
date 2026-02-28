@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AEGIS - Intelligent Cybersecurity Shield</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <canvas id="bg-canvas" aria-hidden="true"></canvas>
+    <div class="bg-gradient-overlay" aria-hidden="true"></div>
+    <div class="greek-border" aria-hidden="true"></div>
+    
+    <button class="back-btn hidden" id="backBtn" aria-label="Go back">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Back
+    </button>
+    
+    <!-- HERO PAGE -->
+    <main class="page" id="heroPage" role="main">
+        <div class="shield-wrap shield-float fade-up delay-1">
+            <svg class="shield-svg shield-pulse" viewBox="0 0 200 240" aria-hidden="true">
+                <defs>
+                    <linearGradient id="shieldGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#00e5ff"/>
+                        <stop offset="100%" stop-color="#0099cc"/>
+                    </linearGradient>
+                </defs>
+                
+                <!-- Outer Shield -->
+                <path class="shield-path" stroke="url(#shieldGradient)"
+                    d="M100 12 
+                       L175 42 
+                       L175 115 
+                       Q175 172 100 220 
+                       Q25 172 25 115 
+                       L25 42 Z"/>
+                
+                <!-- Inner Decorations -->
+                <path class="shield-inner"
+                    d="M100 42 
+                       L150 62 
+                       L150 108 
+                       Q150 155 100 192 
+                       Q50 155 50 108 
+                       L50 62 Z"/>
+                
+                <!-- Greek Key Pattern -->
+                <path class="shield-inner" stroke-width="1.5" fill="none"
+                    d="M75 95 L75 115 L85 115 L85 105 L95 105 L95 125 L65 125 L65 95 Z
+                       M125 95 L125 115 L115 115 L115 105 L105 105 L105 125 L135 125 L135 95 Z"/>
+                
+                <!-- Center Circle -->
+                <circle cx="100" cy="145" r="12" fill="none" stroke="url(#shieldGradient)" stroke-width="2" opacity="0.7"/>
+                <circle cx="100" cy="145" r="5" fill="url(#shieldGradient)" opacity="0.9"/>
+                
+                <!-- Corner Accents -->
+                <circle cx="60" cy="70" r="3" fill="#00e5ff" opacity="0.5"/>
+                <circle cx="140" cy="70" r="3" fill="#00e5ff" opacity="0.5"/>
+            </svg>
+        </div>
+        
+        <h1 class="font-display text-7xl md:text-8xl font-black tracking-widest mt-8 mb-5 fade-up delay-2"
+            style="background: linear-gradient(160deg, #ffffff 20%, #a8b8d0 50%, #00e5ff 100%);
+                   -webkit-background-clip: text;
+                   -webkit-text-fill-color: transparent;
+                   background-clip: text;">
+            AEGIS
+        </h1>
+        
+        <p class="text-xl md:text-2xl text-center max-w-2xl mb-5 fade-up delay-3" style="color: var(--silver);">
+            Your Intelligent Shield Against Web Vulnerabilities
+        </p>
+        
+        <p class="text-base md:text-lg text-center max-w-xl mb-14 fade-up delay-4" style="color: var(--muted); line-height: 1.7;">
+            Analyze website security instantly using intelligent vulnerability detection.<br>
+            Know your risk before attackers do.
+        </p>
+        
+        <div class="glass-card p-10 fade-up delay-5">
+            <button class="btn-primary" id="startBtn" aria-label="Start security scan">
+                Scan a Website
+            </button>
+        </div>
+    </main>
+    
+    <!-- INPUT PAGE -->
+    <section class="page hidden" id="inputPage" aria-label="URL Input">
+        <div class="shield-wrap shield-float" style="width: 100px; height: 120px;">
+            <svg class="shield-svg shield-pulse" viewBox="0 0 200 240" aria-hidden="true">
+                <path class="shield-path" stroke="url(#shieldGradient)"
+                    d="M100 12 L175 42 L175 115 Q175 172 100 220 Q25 172 25 115 L25 42 Z"/>
+            </svg>
+        </div>
+        
+        <h2 class="font-display text-3xl md:text-4xl font-bold mt-5 mb-2 fade-up" style="color: var(--fg);">
+            Security Analysis
+        </h2>
+        <p class="text-base mb-10 fade-up delay-1" style="color: var(--muted);">
+            Enter a URL to begin vulnerability scanning
+        </p>
+        
+        <div class="w-full max-w-lg fade-up delay-2">
+            <label for="urlInput" class="sr-only">Website URL</label>
+            <input type="url" 
+                   class="url-input mb-7" 
+                   id="urlInput"
+                   placeholder="Enter website URL (e.g., https://example.com)"
+                   aria-describedby="inputHelp">
+            
+            <button class="btn-primary w-full" id="analyzeBtn">
+                Analyze Vulnerability
+            </button>
+            <p id="inputHelp" class="text-xs text-center mt-4" style="color: var(--muted);">
+                We only perform passive security analysis. No data is stored.
+            </p>
+        </div>
+    </section>
+    
+    <!-- LOADING PAGE -->
+    <section class="page hidden" id="loadingPage" aria-label="Scanning in progress">
+        <div class="shield-wrap" id="loadingShield">
+            <svg class="shield-svg" viewBox="0 0 200 240" aria-hidden="true">
+                <path class="shield-path" stroke="url(#shieldGradient)" opacity="0.7"
+                    d="M100 12 L175 42 L175 115 Q175 172 100 220 Q25 172 25 115 L25 42 Z"/>
+                <line class="scan-line" x1="30" y1="100" x2="170" y2="100" transform-origin="center"/>
+            </svg>
+        </div>
+        
+        <h2 class="font-display text-2xl font-semibold mt-8 mb-2" style="color: var(--fg);">
+            Scanning Target
+        </h2>
+        <p class="text-sm mb-8" style="color: var(--muted);" id="loadingUrl">
+            Analyzing security posture...
+        </p>
+        
+        <div class="loading-ring" aria-label="Loading"></div>
+    </section>
+    
+    <!-- RESULTS PAGE -->
+    <section class="page hidden" id="resultsPage" aria-label="Scan Results">
+        <div class="shield-wrap shield-float" style="width: 70px; height: 85px;">
+            <svg class="shield-svg shield-pulse" viewBox="0 0 200 240" aria-hidden="true">
+                <path class="shield-path" stroke="url(#shieldGradient)"
+                    d="M100 12 L175 42 L175 115 Q175 172 100 220 Q25 172 25 115 L25 42 Z"/>
+            </svg>
+        </div>
+        
+        <h2 class="font-display text-2xl md:text-3xl font-bold mt-5 mb-2" style="color: var(--fg);">
+            Analysis Complete
+        </h2>
+        <p class="text-sm mb-6" style="color: var(--muted);" id="scannedUrl">
+            https://example.com
+        </p>
+        
+        <!-- Status Badge -->
+        <div id="statusBadge" class="mb-6">
+            <span class="badge moderate">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                </svg>
+                Moderate Risk
+            </span>
+        </div>
+        
+        <!-- Vulnerability Meter -->
+        <div class="meter-wrap">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-sm font-medium" style="color: var(--muted);">Risk Score</span>
+                <span class="font-display text-2xl font-bold" id="riskScore" style="color: var(--accent);">0%</span>
+            </div>
+            <div class="meter-bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">
+                <div class="meter-fill moderate" id="meterFill"></div>
+            </div>
+            <div class="flex justify-between text-xs mt-3" style="color: var(--muted);">
+                <span>Low</span>
+                <span>Moderate</span>
+                <span>High</span>
+                <span>Critical</span>
+            </div>
+        </div>
+        
+        <!-- Description -->
+        <div class="glass-card p-6 mt-8 max-w-lg text-center">
+            <p class="text-base leading-relaxed" style="color: var(--silver);">
+                This website shows <span class="hl">moderate exposure</span> due to 
+                <span class="hl">outdated security headers</span> and potential 
+                <span class="hl">XSS vulnerabilities</span>.
+            </p>
+        </div>
+        
+        <!-- Detailed Findings -->
+        <div class="w-full max-w-lg mt-8">
+            <h3 class="font-display text-xs font-semibold mb-4" style="color: var(--muted); letter-spacing: 3px;">
+                DETAILED FINDINGS
+            </h3>
+            
+            <div class="result-item mb-3" id="finding1">
+                <div class="flex items-start gap-4">
+                    <div class="w-2.5 h-2.5 rounded-full mt-1.5" style="background: #ffc400; flex-shrink: 0;"></div>
+                    <div>
+                        <h4 class="font-semibold mb-1" style="color: var(--fg);">Missing HSTS Header</h4>
+                        <p class="text-sm" style="color: var(--muted);">HTTP Strict Transport Security not enforced</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="result-item mb-3" id="finding2">
+                <div class="flex items-start gap-4">
+                    <div class="w-2.5 h-2.5 rounded-full mt-1.5" style="background: #ff6d00; flex-shrink: 0;"></div>
+                    <div>
+                        <h4 class="font-semibold mb-1" style="color: var(--fg);">X-Frame-Options Missing</h4>
+                        <p class="text-sm" style="color: var(--muted);">Site may be vulnerable to clickjacking attacks</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="result-item" id="finding3">
+                <div class="flex items-start gap-4">
+                    <div class="w-2.5 h-2.5 rounded-full mt-1.5" style="background: #00e676; flex-shrink: 0;"></div>
+                    <div>
+                        <h4 class="font-semibold mb-1" style="color: var(--fg);">SSL Certificate Valid</h4>
+                        <p class="text-sm" style="color: var(--muted);">TLS 1.3 enabled with strong cipher suites</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <button class="btn-primary mt-10" id="scanAgainBtn">
+            Scan Another Website
+        </button>
+    </section>
+
+    <script src="app.js"></script>
+</body>
+</html>
