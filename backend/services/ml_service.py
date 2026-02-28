@@ -1,42 +1,38 @@
 """
-ML Service module for URL feature extraction and phishing prediction.
-This module integrates a LightGBM model to provide local intelligence.
+ML Service module for URL feature extraction, phishing prediction, and SHAP analysis.
+This module integrates a LightGBM model and SHAP explainer for local intelligence.
 """
 
+import os
 import re
 from urllib.parse import urlparse
 import joblib
 import pandas as pd
-import os
+import shap
 
-# This gets the directory where ml_service.py is located
+# Dynamic path handling to find the model relative to this file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# Move up one level if the model is in the parent 'backend' folder
 MODEL_PATH = os.path.join(BASE_DIR, "..", "model.pkl")
 
-def load_model():
+def load_resources():
     """
-    Safely loads the LightGBM model from the specified path.
+    Safely loads the LightGBM model and initializes the SHAP explainer.
     """
     try:
-        return joblib.load(MODEL_PATH)
-    except (FileNotFoundError, IOError) as error:
-        print(f"Critical Error: Could not load ML model at {MODEL_PATH}: {error}")
-        return None
+        model = joblib.load(MODEL_PATH)
+        # TreeExplainer is highly optimized for LightGBM models
+        explainer = shap.TreeExplainer(model)
+        return model, explainer
+    except (FileNotFoundError, IOError, Exception) as error:
+        print(f"Critical Error: Could not load ML resources at {MODEL_PATH}: {error}")
+        return None, None
 
-# Global model instance for efficiency
-LGBM_MODEL = load_model()
+# Global instances initialized at startup for efficiency
+LGBM_MODEL, SHAP_EXPLAINER = load_resources()
 
 def extract_url_features(url: str) -> pd.DataFrame:
     """
     Extracts numerical features from a URL string for model inference.
-    
-    Args:
-        url (str): The raw URL string to analyze.
-        
-    Returns:
-        pd.DataFrame: A single-row DataFrame containing extracted features.
     """
     parsed = urlparse(url)
     hostname = parsed.netloc
@@ -46,51 +42,59 @@ def extract_url_features(url: str) -> pd.DataFrame:
         "hostname_length": len(hostname),
         "num_dots": url.count('.'),
         "num_hyphens": url.count('-'),
-        #"is_ip": 1 if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", hostname) else 0,
         "is_https": 1 if url.startswith("https") else 0,
     }
     return pd.DataFrame([features])
 
 def get_ml_prediction(url: str) -> dict:
     """
-    Performs inference on a URL and returns a standardized verdict.
+    Performs inference and SHAP explanation on a URL.
     
-    Args:
-        url (str): The URL to analyze.
-        
     Returns:
-        dict: A dictionary containing the verdict and confidence score.
+        dict: Contains verdict, raw confidence, and feature-level impacts.
     """
-    if LGBM_MODEL is None:
+    if LGBM_MODEL is None or SHAP_EXPLAINER is None:
         return {
             "verdict": "ERROR",
             "confidence_score": 0.0,
-            "message": "Model not loaded"
+            "message": "ML Engine or Explainer not loaded"
         }
 
     features_df = extract_url_features(url)
     
-    # Get probability for the positive class (phishing)
-    # Standard LightGBM predict_proba returns [prob_class_0, prob_class_1]
     try:
-        prob = LGBM_MODEL.predict_proba(features_df)[0][1]
-    except (AttributeError, ValueError, IndexError) as error:
+        # 1. Get Probability Score
+        prob = float(LGBM_MODEL.predict_proba(features_df)[0][1])
+        
+        # 2. Compute SHAP values for the specific prediction
+        # shap_values[1] represents the 'Malicious' class contributions
+        shap_values = SHAP_EXPLAINER.shap_values(features_df)
+        contributions = shap_values[1][0] if isinstance(shap_values, list) else shap_values[0]
+
+        # Map feature names to their respective impact scores
+        explanation = {
+            name: round(float(val), 4) 
+            for name, val in zip(features_df.columns, contributions)
+        }
+
+        # 3. Verdict Logic
+        if prob > 0.8:
+            label = "MALICIOUS"
+        elif prob > 0.4:
+            label = "SUSPICIOUS"
+        else:
+            label = "CLEAN"
+
+        return {
+            "verdict": label,
+            "confidence_score": round(prob, 4),
+            "feature_impacts": explanation,
+            "engine": "LightGBM + SHAP Explainer"
+        }
+
+    except (AttributeError, ValueError, IndexError, Exception) as error:
         return {
             "verdict": "ERROR",
             "confidence_score": 0.0,
-            "message": f"Inference failed: {str(error)}"
+            "message": f"Analysis failed: {str(error)}"
         }
-    
-    # Verdict thresholding logic
-    if prob > 0.8:
-        label = "MALICIOUS"
-    elif prob > 0.4:
-        label = "SUSPICIOUS"
-    else:
-        label = "CLEAN"
-
-    return {
-        "verdict": label,
-        "confidence_score": round(float(prob), 4),
-        "engine": "LightGBM Classifier"
-    }
