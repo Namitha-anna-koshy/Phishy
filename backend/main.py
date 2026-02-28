@@ -67,8 +67,8 @@ def health_check() -> dict:
 @app.post("/analyze")
 async def analyze_url(request: URLRequest) -> dict:
     """
-    Performs hybrid analysis by running VirusTotal and ML scans.
-    Returns a unified verdict, intensity score, and SHAP feature impacts.
+    Performs hybrid analysis with a safety net for high-reputation domains.
+    Ensures local ML false positives don't override global safe status.
     """
     try:
         # 1. External Scan (VirusTotal)
@@ -77,16 +77,26 @@ async def analyze_url(request: URLRequest) -> dict:
         # 2. Local ML Scan (LightGBM + SHAP)
         ml_results = get_ml_prediction(request.url)
         
-        # 3. Calculate Numerical Risk Intensity
+        # 3. Calculate Numerical Risk Intensity (0-100%)
         risk_intensity = calculate_intensity(vt_results, ml_results)
         
-        # 4. Final Verdict Logic
-        # Malicious if either engine has a high-confidence threat detection
+        # 4. Final Verdict Logic with Safety Net
         final_verdict = "CLEAN"
-        if vt_results.get("verdict") == "MALICIOUS" or ml_results.get("verdict") == "MALICIOUS":
+        
+        # Safety Check: If VT reputation is high and malicious count is 0, it's CLEAN
+        # even if the ML model is overconfident
+        is_highly_reputable = vt_results.get("reputation", 0) > 100
+        has_zero_vt_flags = vt_results.get("malicious_count", 0) == 0
+
+        if is_highly_reputable and has_zero_vt_flags:
+            final_verdict = "CLEAN"
+        # Otherwise, follow the standard intensity-based thresholding
+        elif risk_intensity >= 75:
             final_verdict = "MALICIOUS"
-        elif vt_results.get("verdict") == "SUSPICIOUS" or ml_results.get("verdict") == "SUSPICIOUS":
+        elif risk_intensity >= 40:
             final_verdict = "SUSPICIOUS"
+        else:
+            final_verdict = "CLEAN"
 
         return {
             "url": request.url,
@@ -99,7 +109,6 @@ async def analyze_url(request: URLRequest) -> dict:
             "engine_status": "Success: Hybrid explainable analysis complete."
         }
     except Exception as error:
-        # Explicit re-raising with exception chaining for better debugging
         raise HTTPException(
             status_code=500,
             detail=f"Internal Analysis Failure: {str(error)}"
