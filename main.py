@@ -30,7 +30,7 @@ app.add_middleware(
 app = FastAPI()
 
 # 1. Load the whitelist into a Set for O(1) lookup speed
-with open("white.csv", "r") as f:
+with open("whitelist.csv", "r") as f:
     # Use a set comprehension to clean whitespace
     WHITELIST = {line.strip().lower() for line in f}
 
