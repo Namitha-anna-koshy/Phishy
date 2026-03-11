@@ -46,26 +46,34 @@ def extract_url_features(url: str) -> pd.DataFrame:
     }
     return pd.DataFrame([features])
 
+# simple cache for ML results keyed by URL
+_ML_CACHE: dict[str, dict] = {}
+
 def get_ml_prediction(url: str) -> dict:
     """
     Performs inference and SHAP explanation on a URL.
-    
+
     Returns:
         dict: Contains verdict, raw confidence, and feature-level impacts.
     """
+    if url in _ML_CACHE:
+        return _ML_CACHE[url]
+
     if LGBM_MODEL is None or SHAP_EXPLAINER is None:
-        return {
+        result = {
             "verdict": "ERROR",
             "confidence_score": 0.0,
             "message": "ML Engine or Explainer not loaded"
         }
+        _ML_CACHE[url] = result
+        return result
 
     features_df = extract_url_features(url)
-    
+
     try:
         # 1. Get Probability Score
         prob = float(LGBM_MODEL.predict_proba(features_df)[0][1])
-        
+
         # 2. Compute SHAP values for the specific prediction
         # shap_values[1] represents the 'Malicious' class contributions
         shap_values = SHAP_EXPLAINER.shap_values(features_df)
@@ -85,16 +93,20 @@ def get_ml_prediction(url: str) -> dict:
         else:
             label = "CLEAN"
 
-        return {
+        result = {
             "verdict": label,
             "confidence_score": round(prob, 4),
             "feature_impacts": explanation,
             "engine": "LightGBM + SHAP Explainer"
         }
+        _ML_CACHE[url] = result
+        return result
 
     except (AttributeError, ValueError, IndexError, Exception) as error:
-        return {
+        result = {
             "verdict": "ERROR",
             "confidence_score": 0.0,
             "message": f"Analysis failed: {str(error)}"
         }
+        _ML_CACHE[url] = result
+        return result

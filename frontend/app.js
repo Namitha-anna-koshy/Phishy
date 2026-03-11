@@ -137,37 +137,53 @@ function goBack() {
 }
 
 // ============ RESULTS GENERATION ============
-function generateResults() {
-    const risk = Math.floor(Math.random() * 100);
+function generateResults(analysisData) {
     const riskScoreEl = document.getElementById('riskScore');
     const meterFill = document.getElementById('meterFill');
     const statusBadge = document.getElementById('statusBadge');
     const meterBar = meterFill.parentElement;
-
-    let level, levelClass, badgeText, iconPath;
-
-    if (risk < 25) {
-        level = 'low';
-        levelClass = 'secure';
-        badgeText = 'Secure';
-        iconPath = '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>';
-    } else if (risk < 50) {
-        level = 'moderate';
-        levelClass = 'moderate';
-        badgeText = 'Moderate Risk';
-        iconPath = '<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
-    } else if (risk < 75) {
-        level = 'high';
-        levelClass = 'high';
-        badgeText = 'High Risk';
-        iconPath = '<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+    
+    // Use the final intensity returned by the backend; this value already
+    // incorporates any boosting or hybrid adjustments. vt_score is only a
+    // fallback for very old responses that might lack malicious_intensity.
+    let risk = 0;
+    if (analysisData.malicious_intensity) {
+        const num = parseFloat(analysisData.malicious_intensity);
+        if (!isNaN(num)) risk = num;
     } else {
-        level = 'critical';
-        levelClass = 'critical';
-        badgeText = 'Critical Risk';
-        iconPath = '<path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>';
+        const vt = analysisData.hybrid_report?.global_threat_intel || {};
+        if (vt.vt_score != null) {
+            risk = parseFloat(vt.vt_score) || 0;
+        }
+    }
+    const verdict = analysisData.final_verdict;
+
+    // determine badge/level based strictly on the backend verdict so the UI
+    // mirrors exactly what the engine returned (clean/model/hybrid logic).
+    let level, levelClass, badgeText, iconPath;
+    switch (verdict) {
+        case 'MALICIOUS':
+            level = 'critical';
+            levelClass = 'critical';
+            badgeText = 'Malicious';
+            iconPath = '<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+            break;
+        case 'SUSPICIOUS':
+            level = 'moderate';
+            levelClass = 'moderate';
+            badgeText = 'Suspicious';
+            iconPath = '<path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>';
+            break;
+        default:
+            // CLEAN or any unknown
+            level = 'low';
+            levelClass = 'secure';
+            badgeText = 'Secure';
+            iconPath = '<path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>';
     }
 
+    // previous risk-based fallback logic removed
+    
     // Reset and animate
     meterFill.style.width = '0%';
     meterFill.className = 'meter-fill ' + level;
@@ -187,6 +203,12 @@ function generateResults() {
             ${badgeText}
         </span>
     `;
+
+    // show which engine/source determined the verdict (provided by backend)
+    const sourceEl = document.getElementById('sourceInfo');
+    if (sourceEl) {
+        sourceEl.textContent = `Determined by: ${analysisData.source || 'Hybrid'}`;
+    }
 
     riskScoreEl.style.color = colors[level];
 
@@ -210,6 +232,104 @@ function generateResults() {
     }
 
     requestAnimationFrame(animateScore);
+    
+    // Populate findings from analysis data
+    populateFindings(analysisData);
+
+    // Show SHAP feature contributions if available
+    showShapContributions(
+        analysisData.hybrid_report.local_ml_engine.feature_impacts
+    );
+}
+
+// ---------- SHAP DISPLAY HELPERS ----------
+function showShapContributions(contributions) {
+    const shapSection = document.getElementById('shapSection');
+    const shapList = document.getElementById('shapList');
+    shapList.innerHTML = '';
+    if (contributions && Object.keys(contributions).length) {
+        Object.entries(contributions).forEach(([feature, value]) => {
+            const li = document.createElement('li');
+            li.textContent = `${feature}: ${value}`;
+            shapList.appendChild(li);
+        });
+        shapSection.classList.remove('hidden');
+    } else {
+        shapSection.classList.add('hidden');
+    }
+}
+
+// ============ POPULATE FINDINGS ============
+function populateFindings(analysisData) {
+    const vt = analysisData.hybrid_report.global_threat_intel || {};
+    const ml = analysisData.hybrid_report.local_ml_engine || {};
+
+    // remove previous result items
+    const existing = document.querySelectorAll('#resultsPage .result-item');
+    existing.forEach(el => el.remove());
+
+    const container = document.querySelector('#resultsPage .w-full.max-w-lg');
+    if (!container) return;
+    const h3 = container.querySelector('h3');
+    if (!h3) return;
+
+    // build new entries
+    let html = '';
+
+    // entry for global threat intel
+    html += `
+        <div class="result-item mb-3">
+            <div class="flex items-start gap-4">
+                <div class="w-2.5 h-2.5 rounded-full mt-1.5" style="background: #00e676; flex-shrink:0;"></div>
+                <div>
+                    <h4 class="font-semibold mb-1" style="color: var(--fg);">Global Intelligence: ${vt.verdict || 'N/A'}</h4>
+                    <p class="text-sm" style="color: var(--muted);">
+                        engines=${vt.total_engines||0}, malicious=${vt.malicious_count||0}, suspicious=${vt.suspicious_count||0}
+                    </p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // entry for local ML engine
+    html += `
+        <div class="result-item mb-3">
+            <div class="flex items-start gap-4">
+                <div class="w-2.5 h-2.5 rounded-full mt-1.5" style="background: #ffc400; flex-shrink:0;"></div>
+                <div>
+                    <h4 class="font-semibold mb-1" style="color: var(--fg);">ML Engine: ${ml.verdict || 'N/A'}</h4>
+                    <p class="text-sm" style="color: var(--muted);">confidence: ${ml.confidence_score != null ? ml.confidence_score : '—'}</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    h3.insertAdjacentHTML('afterend', html);
+}
+
+// ============ API CALL FUNCTION ============
+async function analyzeURL(url) {
+    const backendURL = 'http://localhost:8000/analyze';
+    
+    try {
+        const response = await fetch(backendURL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ url: url })
+        });
+        
+        if (!response.ok) {
+            throw new Error(`Backend error: ${response.status} ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Analysis failed:', error);
+        throw error;
+    }
 }
 
 // ============ EVENT LISTENERS ============
@@ -218,7 +338,7 @@ startBtn.addEventListener('click', () => {
     setTimeout(() => showPage('input'), 300);
 });
 
-analyzeBtn.addEventListener('click', () => {
+analyzeBtn.addEventListener('click', async () => {
     const url = urlInput.value.trim();
     if (url) {
         document.getElementById('loadingUrl').textContent = url;
@@ -227,13 +347,21 @@ analyzeBtn.addEventListener('click', () => {
         showPage('loading');
         document.getElementById('loadingShield').classList.add('scanning');
 
-        const scanDuration = 2200 + Math.random() * 1500;
-
-        setTimeout(() => {
+        try {
+            // Call backend API
+            const analysisData = await analyzeURL(url);
+            
+            // Simulate minimum loading time for better UX
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            
             document.getElementById('loadingShield').classList.remove('scanning');
             showPage('results');
-            generateResults();
-        }, scanDuration);
+            generateResults(analysisData);
+        } catch (error) {
+            document.getElementById('loadingShield').classList.remove('scanning');
+            alert('Analysis failed: ' + error.message);
+            showPage('input');
+        }
     } else {
         urlInput.focus();
         urlInput.style.borderColor = '#ff5252';

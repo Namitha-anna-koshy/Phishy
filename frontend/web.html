@@ -6,7 +6,7 @@
     <title>AEGIS - Intelligent Cybersecurity Shield</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
     <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -166,6 +166,7 @@
                 Moderate Risk
             </span>
         </div>
+        <p id="sourceInfo" class="text-xs mb-4" style="color: var(--muted);"></p>
         
         <!-- Vulnerability Meter -->
         <div class="meter-wrap">
@@ -182,15 +183,6 @@
                 <span>High</span>
                 <span>Critical</span>
             </div>
-        </div>
-        
-        <!-- Description -->
-        <div class="glass-card p-6 mt-8 max-w-lg text-center">
-            <p class="text-base leading-relaxed" style="color: var(--silver);">
-                This website shows <span class="hl">moderate exposure</span> due to 
-                <span class="hl">outdated security headers</span> and potential 
-                <span class="hl">XSS vulnerabilities</span>.
-            </p>
         </div>
         
         <!-- Detailed Findings -->
@@ -229,12 +221,20 @@
                 </div>
             </div>
         </div>
-        
+
+        <!-- SHAP contributions will be injected here -->
+        <div id="shapSection" class="w-full max-w-lg mt-8 hidden">
+            <h3 class="font-display text-xs font-semibold mb-4" style="color: var(--muted); letter-spacing: 3px;">
+                FEATURE CONTRIBUTIONS (SHAP)
+            </h3>
+            <ul id="shapList" class="list-disc list-inside text-sm" style="color: var(--muted);"></ul>
+        </div>
+
         <button class="btn-primary mt-10" id="scanAgainBtn">
             Scan Another Website
         </button>
     </section>
 
-    <script src="app.js"></script>
+    <script src="/static/app.js"></script>
 </body>
 </html>
