@@ -58,27 +58,100 @@ class URLRequest(BaseModel):
 def startup_checks() -> None:
     """Validate that the LightGBM model and SHAP explainer loaded properly at startup."""
     if LGBM_MODEL is None or SHAP_EXPLAINER is None:
-        # Critical failure: prevents the server from starting with broken ML components
         raise RuntimeError("ML model or SHAP explainer failed to initialize. Check paths.")
 
-def calculate_intensity(vt_results: dict, ml_results: dict) -> float:
-    """
-    Calculates a 0-100% risk intensity score.
-    Logic: (VirusTotal Detections * 0.6) + (ML Confidence * 0.4)
-    """
-    # VT Intensity: Normalized by number of engines flagging the URL
-    vt_ratio = 0.0
-    malicious_count = vt_results.get("malicious_count", 0)
-    if vt_results.get("total_engines", 0) > 0:
-        # 5+ engines usually indicates a high-confidence threat
-        vt_ratio = min(malicious_count / 5, 1.0)
 
-    # ML Intensity: Raw probability from the LightGBM model
-    ml_prob = ml_results.get("confidence_score", 0.0)
+def calculate_vt_intensity(vt_results: dict) -> float:
+    """
+    Calculates maliciousness score (0.0 - 1.0) using VirusTotal signals.
 
-    # Weighted aggregate score
-    intensity = (vt_ratio * 0.6) + (ml_prob * 0.4)
-    return round(intensity * 100, 2)
+    KEY DESIGN: vt_ratio uses a power curve (x^0.35) so that even small
+    engine ratios produce meaningfully high scores. This correctly handles
+    cases where 2 engines flagging vs 16 engines flagging produce very
+    different outputs despite both being small absolute ratios.
+
+    Dynamic weights based on reputation availability:
+
+      |reputation| < 100  (unknown domain):
+          Engine consensus dominates — it's the only signal we have.
+          base = 0.70*vt_ratio + 0.15*rep_norm + 0.15*vt_norm
+
+      |reputation| >= 100 (known domain):
+          Historical reputation dominates — accumulated community trust.
+          base = 0.20*vt_ratio + 0.65*rep_norm + 0.15*vt_norm
+
+    Additive boosts (each shrinks remaining headroom toward 1.0):
+        malicious_count > 3  → +15% headroom  (beyond noise threshold)
+        malicious_count > 8  → +40% headroom  (strong multi-engine consensus)
+        reputation < -1000   → +25% headroom  (confirmed bad actor history)
+        vt_score > 10        → +10% headroom  (high raw VT score)
+
+    Verdict thresholds (applied in analyze_url):
+        >= 65%  → MALICIOUS
+        >= 45%  → SUSPICIOUS
+        < 45%   → CLEAN
+        MALICIOUS verdict from VT always floors at 45%
+    """
+    malicious_count  = vt_results.get("malicious_count", 0)
+    suspicious_count = vt_results.get("suspicious_count", 0)
+    total_engines    = vt_results.get("total_engines", 1)   # avoid div-by-zero
+    reputation       = vt_results.get("reputation", 0)
+    vt_score         = vt_results.get("vt_score", 0.0)
+
+    # --- base signals ---
+    raw_ratio = (malicious_count + 0.5 * suspicious_count) / total_engines
+    vt_ratio  = raw_ratio ** 0.35   # power curve: amplifies low ratios aggressively
+    rep_norm  = min(max(-reputation / 2000, 0.0), 1.0)
+    vt_norm   = min(max(vt_score / 100, 0.0), 1.0)
+
+    # --- dynamic weights ---
+    if abs(reputation) < 100:
+        # unknown domain: engine ratio is the primary signal
+        base = 0.70 * vt_ratio + 0.15 * rep_norm + 0.15 * vt_norm
+    else:
+        # known domain: reputation history dominates
+        base = 0.20 * vt_ratio + 0.65 * rep_norm + 0.15 * vt_norm
+
+    # --- additive boosts ---
+    if malicious_count > 3:
+        base = base + 0.15 * (1.0 - base)   # beyond noise, real signal
+
+    if malicious_count > 8:
+        base = base + 0.40 * (1.0 - base)   # strong multi-engine consensus
+
+    if reputation < -1000:
+        base = base + 0.25 * (1.0 - base)   # confirmed bad actor
+
+    if vt_score > 10:
+        base = base + 0.10 * (1.0 - base)   # high raw VT score
+
+    return min(base, 1.0)
+
+
+def calculate_ml_intensity(ml_results: dict) -> float:
+    """
+    Calculates maliciousness score (0.0 - 1.0) from SHAP feature impacts.
+    Used ONLY when VirusTotal is unavailable or returns an error.
+
+    Formula:
+        shap_risk = |sum of negative SHAP values| / |sum of all SHAP values|
+        score     = clamp(shap_risk + 0.1 * confidence_score, 0, 1)
+
+    Negative SHAP values push toward malicious classification.
+    The higher their proportion, the riskier the URL.
+    """
+    feature_impacts  = ml_results.get("feature_impacts", {})
+    confidence_score = ml_results.get("confidence_score", 0.0)
+
+    values    = list(feature_impacts.values())
+    neg_sum   = sum(abs(v) for v in values if v < 0)
+    total_sum = sum(abs(v) for v in values)
+
+    shap_risk = (neg_sum / total_sum) if total_sum > 0 else 0.0
+    score     = shap_risk + 0.1 * confidence_score
+
+    return min(max(score, 0.0), 1.0)
+
 
 @app.get("/health")
 def health_check() -> dict:
@@ -88,6 +161,7 @@ def health_check() -> dict:
         "active_branch": "32-integrate-shap-to-the-backend",
         "ml_engine": "LightGBM + SHAP Ready"
     }
+
 
 @app.post("/analyze")
 async def analyze_url(request: URLRequest) -> dict:
@@ -103,47 +177,49 @@ async def analyze_url(request: URLRequest) -> dict:
         ml_task = asyncio.to_thread(get_ml_prediction, request.url)
         vt_results, ml_results = await asyncio.gather(vt_task, ml_task)
 
-        # determine output according to available data
         vt_verdict = vt_results.get("verdict")
-        # compute a score from the latest engine counts (ignore cached vt_score)
-        total_engines = vt_results.get("total_engines", 0)
-        malicious_count = vt_results.get("malicious_count", 0)
-        if total_engines > 0:
-            vt_score = round((malicious_count / total_engines) * 100, 2)
-        else:
-            vt_score = 0.0
+
         if vt_verdict == "CLEAN":
-            # trust explicit clean from the API
-            final_verdict = "CLEAN"
+            # trust explicit clean verdict from VT
+            final_verdict  = "CLEAN"
             risk_intensity = 0.0
-            source = "VirusTotal"
+            source         = "VirusTotal"
+
         elif vt_verdict in ("ERROR", "CONNECTION_FAILED", "NOT_FOUND") or not vt_verdict:
-            # fallback to ML when VT can't provide a verdict
-            final_verdict = ml_results.get("verdict", "CLEAN")
-            risk_intensity = float(ml_results.get("confidence_score", 0.0)) * 100
-            source = "Model"
+            # VT unavailable — fall back entirely to ML SHAP score
+            ml_score       = calculate_ml_intensity(ml_results)
+            risk_intensity = round(ml_score * 100, 2)
+            final_verdict  = ml_results.get("verdict", "CLEAN")
+            source         = "Model"
+
         else:
-            # VT returned suspicious or malicious
-            if vt_score > 0:
-                # use the API-derived score directly when available
-                risk_intensity = vt_score
-            else:
-                # otherwise fallback to original hybrid formula
-                risk_intensity = calculate_intensity(vt_results, ml_results)
+            # VT returned MALICIOUS or SUSPICIOUS — use VT-based formula
+            vt_score       = calculate_vt_intensity(vt_results)
+            risk_intensity = round(vt_score * 100, 2)
 
-            # boost completely malicious results so they're always high-risk
+            # floor: if VT explicitly says MALICIOUS, bar never drops below 45%
+            # even for domains with sparse signals (e.g. newly registered typosquats)
             if vt_verdict == "MALICIOUS":
-                risk_intensity = max(risk_intensity, 80.0)
+                risk_intensity = max(risk_intensity, 45.0)
 
-            # safety-net: high reputation + zero flags = clean
+            # safety-net 1: strong positive reputation + zero flags = clean
             if vt_results.get("reputation", 0) > 100 and vt_results.get("malicious_count", 0) == 0:
-                final_verdict = "CLEAN"
-            elif risk_intensity >= 75:
+                final_verdict  = "CLEAN"
+                risk_intensity = 0.0
+
+            # safety-net 2: highly trusted domain with 1-2 rogue engine flags
+            elif vt_results.get("reputation", 0) > 500 and vt_results.get("malicious_count", 0) <= 2:
+                final_verdict  = "CLEAN"
+                risk_intensity = min(risk_intensity, 5.0)
+
+            # verdict thresholds (tuned against known typosquat test cases)
+            elif risk_intensity >= 65:
                 final_verdict = "MALICIOUS"
-            elif risk_intensity >= 40:
+            elif risk_intensity >= 45:
                 final_verdict = "SUSPICIOUS"
             else:
                 final_verdict = "CLEAN"
+
             source = "Hybrid"
 
         return {
@@ -157,6 +233,7 @@ async def analyze_url(request: URLRequest) -> dict:
             },
             "engine_status": "Success: Hybrid explainable analysis complete."
         }
+
     except Exception as error:
         raise HTTPException(
             status_code=500,
