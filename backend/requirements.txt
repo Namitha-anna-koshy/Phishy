@@ -4,7 +4,3 @@ requests
 python-dotenv
 pydantic
 lightgbm
-joblib
-shap
-tldextract
-pandas
