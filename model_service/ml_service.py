@@ -12,7 +12,7 @@ import shap
 
 # Dynamic path handling to find the model relative to this file
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "..", "model.pkl")
+MODEL_PATH = "model.pkl"
 
 def load_resources():
     """
