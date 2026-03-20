@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # 1. THE NEW ML SERVICE
+  model_service:
+    build: ./model_service
+    container_name: phishy_model
+    ports:
+      - "8001:8000"  # Exposing on port 8001 so it doesn't clash with your backend
+    volumes:
+      - ./model_service:/app
+    # Hot-reloading enabled for your prediction API (and watches your model.pkl)
+    command: uvicorn serve_model:app --host 0.0.0.0 --port 8000 --reload --reload-include "*.pkl"
+
+  # 2. YOUR MAIN BACKEND
+  backend:
+    build: ./backend
+    container_name: phishy_backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app
+      - ./frontend:/frontend  # <--- Your fix is right here!
+    depends_on:
+      - model_service # Ensures the ML model is up before the backend starts
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # 3. YOUR STATIC FRONTEND
+  frontend:
+    image: nginx:alpine
+    container_name: phishy_frontend
+    ports:
+      - "8080:80"
+    volumes:
+      - ./frontend:/usr/share/nginx/html
+    command: /bin/sh -c "sed -i 's/index  index.html index.htm;/index  web.html;/' /etc/nginx/conf.d/default.conf && nginx -g 'daemon off;'"
+    depends_on:
+      - backend
+
+  
