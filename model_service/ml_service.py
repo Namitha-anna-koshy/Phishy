@@ -14,8 +14,8 @@ import shap
 
 # ── Model loading ─────────────────────────────────────────
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "..", "model.pkl")
-META_PATH  = os.path.join(BASE_DIR, "..", "model_meta.pkl")
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
+META_PATH  = os.path.join(BASE_DIR, "model_meta.pkl")
 
 # These must exactly match the column names used during training
 URL_FEATURES = [
