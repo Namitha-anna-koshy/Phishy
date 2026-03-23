@@ -259,4 +259,4 @@ yarn-error.log*
 
 # --- Large Models / Data (Optional) ---
 # Un-comment the line below if you want to keep .pkl files out of Git
-# *.pkl
+ *.pkl
